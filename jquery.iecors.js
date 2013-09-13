@@ -14,11 +14,10 @@
   if ( jQuery.support.iecors ) {
 
     jQuery.ajaxTransport(function( s ) {
-      var callback;
+      var callback, xdr = s.xdr();
 
       return {
         send: function( headers, complete ) {
-          var xdr = s.xdr();
 
           xdr.onload = function() {
             var headers = { 'Content-Type': xdr.contentType };
