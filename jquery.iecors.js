@@ -1,46 +1,102 @@
+/*!
+ jquery.iecors.js
+ The MIT License
+ Copyright (c) 2011 Derek Kastner
+
+ Copyright (c) 2013 RAMP Holdings, Inc.
+ .. Modified RAMP : fix undefined variables, early aborts
+
+ Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+ The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 (function( jQuery ) {
-  // Create the request object
-  // (This is still attached to ajaxSettings for backward compatibility)
-  jQuery.ajaxSettings.xdr = function() {
-    return (window.XDomainRequest ? new window.XDomainRequest() : null);
-  };
+    // Create the request object
+    // (This is still attached to ajaxSettings for backward compatibility)
+    jQuery.ajaxSettings.xdr = function() {
+        return (window.XDomainRequest ? new window.XDomainRequest() : null);
+    };
 
-  // Determine support properties
-  (function( xdr ) {
-    jQuery.extend( jQuery.support, { iecors: !!xdr });
-  })( jQuery.ajaxSettings.xdr() );
 
-  // Create transport if the browser can provide an xdr
-  if ( jQuery.support.iecors ) {
-
-    jQuery.ajaxTransport(function( s ) {
-      var callback, xdr = s.xdr();
-
-      return {
-        send: function( headers, complete ) {
-
-          xdr.onload = function() {
-            var headers = { 'Content-Type': xdr.contentType };
-            complete(200, 'OK', { text: xdr.responseText }, headers);
-          };
-          
-          // Apply custom fields if provided
-					if ( s.xhrFields ) {
-            xhr.onerror = s.xhrFields.error;
-            xhr.ontimeout = s.xhrFields.timeout;
-					}
-
-          xdr.open( s.type, s.url );
-
-          // XDR has no method for setting headers O_o
-
-          xdr.send( ( s.hasContent && s.data ) || null );
-        },
-
-        abort: function() {
-          xdr.abort();
+    // IE8 will randomly abort concurrent xDomain requests, so queue them
+    var current = null;
+    var queue = [];
+    var queueNext = function () {
+        current = null;
+        queueCheck();
+    };
+    var queueCheck = function () {
+        if(! current ){
+            current = queue.shift();
+            if( current && current instanceof Function )
+                current();
+            else
+                current = null;
         }
-      };
-    });
-  }
+    };
+
+    // Determine support properties
+    (function( xdr ) {
+        jQuery.extend( jQuery.support, { iecors: !!xdr });
+    })( jQuery.ajaxSettings.xdr() );
+
+    // Create transport if the browser can provide an xdr
+    if ( jQuery.support.iecors ) {
+
+        jQuery.ajaxTransport(function( s ) {
+            var callback;
+
+            return {
+                send: function( headers, complete ) {
+                    var xdr = s.xdr();
+
+                    xdr.onload = function() {
+                        queueNext();
+                        var headers = { 'Content-Type': xdr.contentType };
+                        complete(200, 'OK', { text: xdr.responseText }, headers);
+                    };
+
+                    // need to define handlers to avoid aborts
+                    // http://stackoverflow.com/a/9928073/369724
+                    xdr.onprogress = function () {};
+                    xdr.onerror = function () {
+                        queueNext();
+                    };
+                    xdr.ontimeout = function () {
+                        queueNext();
+                    };
+
+                    // Apply custom fields if provided
+                    if ( s.xhrFields ) {
+                        xdr.onerror = s.xhrFields.error;
+                        xdr.ontimeout = s.xhrFields.timeout;
+                    }
+
+                    xdr.open( s.type, s.url );
+
+                    // XDR has no method for setting headers O_o
+
+                    // http://stackoverflow.com/a/6699148/369724
+                    var sendFn = function () {
+                        if( s.hasContent && s.data )
+                            xdr.send( s.data );
+                        else
+                            xdr.send();
+                    };
+                    if( document.documentMode == 8 ) {
+                        queue.push( sendFn );
+                        queueCheck();
+                    }
+                    else {
+                        setTimeout( sendFn, 0);
+                    }
+                },
+
+                abort: function() {
+                    s.xdr().abort();
+                }
+            };
+        });
+    }
 })( jQuery );
