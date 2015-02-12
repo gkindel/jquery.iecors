@@ -62,9 +62,11 @@
                     xdr.onprogress = function () {};
                     xdr.onerror = function () {
                         queueNext();
+                        complete(500, 'ERROR', {}, {});
                     };
                     xdr.ontimeout = function () {
                         queueNext();
+                        complete(408, 'TIMEOUT', {}, {});
                     };
 
                     // Apply custom fields if provided
